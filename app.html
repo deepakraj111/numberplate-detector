@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Number Plate Detector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Original styles remain unchanged for UI consistency */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: url("/static/toll tax.png") no-repeat center center fixed;
+      background-size: cover;
+      position: relative;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(34,34,34,0.35);
+      z-index: 0;
+    }
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 480px;
+      margin: 48px auto 24px auto;
+      background: rgba(255,255,255,0.18);
+      border-radius: 20px;
+      box-shadow: 0 8px 32px 0 #222a;
+      padding: 36px 28px 28px 28px;
+      backdrop-filter: blur(7px);
+      border: 1.5px solid rgba(255,255,255,0.18);
+    }
+    h1 {
+      font-weight: 800;
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+      font-size: 2em;
+      text-align: center;
+      color: #ffd600;
+      text-shadow: 0 2px 12px #0008;
+    }
+    #video, #captured {
+      display: block;
+      margin: 0 auto 18px auto;
+      border-radius: 14px;
+      box-shadow: 0 2px 18px #0007;
+      width: 100%;
+      max-width: 400px;
+      background: #111;
+      border: 2px solid #ffd60044;
+    }
+    #canvas { display: none; }
+    .btn-group {
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    button {
+      padding: 12px 32px;
+      font-size: 1.08em;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(90deg, #2196f3 0%, #1565c0 100%);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+      box-shadow: 0 2px 8px #0003;
+    }
+    button:hover {
+      background: linear-gradient(90deg, #1565c0 0%, #2196f3 100%);
+      box-shadow: 0 4px 16px #2196f388;
+    }
+    button:active {
+      background: linear-gradient(90deg, #0d47a1 0%, #1976d2 100%);
+    }
+    #result-card {
+      margin-top: 18px;
+      background: rgba(255,255,255,0.13);
+      border-radius: 12px;
+      padding: 18px 12px;
+      box-shadow: 0 1px 8px #0002;
+      display: none;
+      text-align: center;
+      border-left: 6px solid #ffd600;
+    }
+    #result-card.success { border-left: 6px solid #00e676; }
+    #result-card.error { border-left: 6px solid #ff1744; }
+    #result-title {
+      font-size: 1.1em;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    #plate-number {
+      font-size: 1.6em;
+      font-family: 'Consolas', monospace;
+      letter-spacing: 2px;
+      color: #ffd600;
+      text-shadow: 0 2px 8px #0008;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 1em;
+      color: #90caf9;
+      min-height: 24px;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      .container { padding: 12px 2vw 18px 2vw; width: 95%; }
+      #video, #captured { max-width: 98vw; }
+    }
+    #loader {
+      display: none;
+      text-align: center;
+    }
+    #loader div {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #ffd600;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #live-badge {
+      position: absolute;
+      top: -16px;
+      right: -12px;
+      background: #2196f3;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8em;
+      box-shadow: 0 2px 6px #0004;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Number Plate Detector</h1>
+    <div style="position: relative;">
+      <video id="video" width="400" height="270" autoplay playsinline></video>
+      <div id="live-badge">🎥 Live Feed</div>
+    </div>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <img id="captured" style="display:none;" width="400" height="270" alt="Captured frame"/>
+    <div class="btn-group">
+      <button id="snap">📸 Capture</button>
+      <button id="reset" style="display:none;">🔄 Reset</button>
+    </div>
+    <div id="loader"><div></div></div>
+    <div id="status"></div>
+    <div id="result-card">
+      <div id="result-title"></div>
+      <div id="plate-number"></div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const captured = document.getElementById('captured');
+      const snap = document.getElementById('snap');
+      const reset = document.getElementById('reset');
+      const status = document.getElementById('status');
+      const resultCard = document.getElementById('result-card');
+      const resultTitle = document.getElementById('result-title');
+      const plateNumber = document.getElementById('plate-number');
+      const loader = document.getElementById('loader');
+
+      function openCamera() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+              video.srcObject = stream;
+              video.style.display = '';
+            })
+            .catch(err => {
+              status.textContent = "Camera error: " + err.name;
+            });
+        } else {
+          status.textContent = "Camera not supported.";
+        }
+      }
+
+      function dataURLtoBlob(dataurl) {
+        const arr = dataurl.split(',');
+        const mime = arr[0].match(/:(.*?);/)[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) u8arr[n] = bstr.charCodeAt(n);
+        return new Blob([u8arr], { type: mime });
+      }
+
+      snap.onclick = function () {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          loader.style.display = 'block';
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg');
+          captured.src = dataUrl;
+          captured.style.display = '';
+          video.style.display = 'none';
+          snap.style.display = 'none';
+          reset.style.display = '';
+          resultCard.style.display = "none";
+          status.textContent = "Detecting number plate...";
+
+          fetch('/detect', {
+            method: 'POST',
+            body: (() => {
+              const fd = new FormData();
+              fd.append('image', dataURLtoBlob(dataUrl), 'capture.jpg');
+              return fd;
+            })()
+          })
+            .then(r => r.json().then(data => ({ status: r.status, body: data })))
+            .then(res => {
+              loader.style.display = 'none';
+              const { status, body } = res;
+              resultCard.style.display = "block";
+
+              if (status === 200) {
+                resultCard.className = "success";
+                resultTitle.textContent = body.message || "Plate Detected";
+                plateNumber.textContent = body.plate_number + " (₹" + body.balance.toFixed(2) + ")";
+                status.textContent = "New Balance: ₹" + body.balance.toFixed(2);
+              } else if (status === 402) {
+                resultCard.className = "error";
+                resultTitle.textContent = "Insufficient Balance";
+                plateNumber.textContent = body.plate_number;
+                status.textContent = "Balance: ₹" + body.balance.toFixed(2);
+              } else {
+                resultCard.className = "error";
+                resultTitle.textContent = body.message || "Detection Failed";
+                plateNumber.textContent = "";
+                status.textContent = "Try again.";
+              }
+            })
+            .catch(() => {
+              loader.style.display = 'none';
+              resultCard.className = "error";
+              resultCard.style.display = "block";
+              resultTitle.textContent = "Server error";
+              plateNumber.textContent = "";
+              status.textContent = "Backend not reachable.";
+            });
+        }
+      };
+
+      reset.onclick = function () {
+        captured.style.display = 'none';
+        video.style.display = '';
+        snap.style.display = '';
+        reset.style.display = 'none';
+        status.textContent = '';
+        resultCard.style.display = "none";
+        openCamera();
+      };
+
+      openCamera();
+    });
+  </script>
+</body>
+</html>
